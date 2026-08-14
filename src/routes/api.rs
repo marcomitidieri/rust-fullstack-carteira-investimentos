@@ -1,4 +1,4 @@
-use axum::{Json, Router, routing::get};
+use axum::{Json, Router, routing::{get}};
 use serde::Deserialize;
 
 use crate::{
@@ -6,16 +6,26 @@ use crate::{
 };
 
 pub fn router() -> Router<AppState> {
-    Router::new().route(
-        "/assets",
-        get(list_assets).post(create_asset).patch(update_asset),
-    )
+    Router::new()
+        .route("/assets", get(list_assets).post(create_asset).patch(update_asset))
+        .route("/assets/{id}", get(get_asset_by_id).delete(delete_asset))
 }
 
 #[tracing::instrument(skip_all)]
 async fn list_assets(repostiory: Repository) -> Result<Json<Vec<Asset>>, AppError> {
     let assets = repostiory.list_assets().await?;
     Ok(Json(assets))
+}
+
+#[tracing::instrument(skip_all)]
+async fn get_asset_by_id(
+    repostiory: Repository,
+    axum::extract::Path(asset_id): axum::extract::Path<i64>,
+) -> Result<Json<Asset>, AppError> {
+    match repostiory.get_asset_by_id(asset_id).await? {
+        Some(asset) => Ok(Json(asset)),
+        None => Err(AppError::AssetDoesNotExist(asset_id)),
+    }
 }
 
 #[derive(Deserialize)]
@@ -55,7 +65,19 @@ async fn update_asset(
         .await?
     {
         Some(updated_asset) => Ok(Json(updated_asset)),
-        None => Err(AppError::AssetDoesNotExist),
+        None => Err(AppError::AssetDoesNotExist(request.id)),
+    }
+}
+
+#[tracing::instrument(skip_all)]
+async fn delete_asset(
+    _: Admin,
+    repostiory: Repository,
+    axum::extract::Path(asset_id): axum::extract::Path<i64>,
+) -> Result<Json<Asset>, AppError> {
+    match repostiory.delete_asset(asset_id).await? {
+        Some(asset) => Ok(Json(asset)),
+        None => Err(AppError::AssetDoesNotExist(asset_id)),
     }
 }
 
@@ -109,5 +131,16 @@ mod tests {
         assert_eq!(updated_asset.unit_value, 20.0);
 
         insta::assert_json_snapshot!(updated_asset);
+    }
+
+    #[sqlx::test(fixtures("bitcoin_asset"))]
+    async fn test_delete_asset(db: PgPool) {
+        let deleted_asset = delete_asset(Admin, db.into(), axum::extract::Path(1))
+            .await
+            .expect("success");
+
+        assert_eq!(deleted_asset.id, 1);
+        assert_eq!(deleted_asset.name, "Bitcoin");
+        assert_eq!(deleted_asset.unit_value, 10.0);
     }
 }
