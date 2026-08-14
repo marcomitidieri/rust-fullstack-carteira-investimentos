@@ -57,6 +57,18 @@ impl Repository {
         .await
     }
 
+    pub async fn delete_asset(&self, asset_id: i64) -> sqlx::Result<Option<Asset>> {
+        sqlx::query_as!(
+            Asset,
+            "DELETE FROM assets
+             WHERE id = $1
+             RETURNING id, name, unit_value;",
+            asset_id
+        )
+        .fetch_optional(&self.db)
+        .await
+    }
+
     pub async fn add_user(&self, username: &str, password_hash: &str) -> sqlx::Result<UserRecord> {
         sqlx::query_as!(
             UserRecord,
@@ -81,6 +93,19 @@ impl Repository {
         .fetch_optional(&self.db)
         .await
     }
+
+    pub async fn get_asset_by_id(&self, asset_id: i64) -> sqlx::Result<Option<Asset>> {
+        sqlx::query_as!(
+            Asset,
+            "SELECT id, name, unit_value
+            FROM assets
+            WHERE id = $1;",
+            asset_id
+        )
+        .fetch_optional(&self.db)
+        .await
+    }
+    
 }
 
 impl FromRequestParts<AppState> for Repository {
